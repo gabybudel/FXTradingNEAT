@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun May 13 12:23:02 2018
+"""Plots of strategy performance and volatility series.
 
-@author: TerriZ
+Produces cumulative-return plots for the train and test periods (with NBER
+recession periods shaded grey and the train/test split marked) and a
+dual-axis plot of average implied volatility versus the volatility risk
+premium.
+
+The return plots only need ``Output/Strategy_Returns.xlsx`` (written by
+``evaluate_ml.py``); the volatility plot additionally requires ``imp_vol``
+and ``vrp`` from a session in which ``data.py`` was run.
 """
 
 import matplotlib.pyplot as plt
-import statsmodels.api as sm
 import pandas as pd
 import numpy as np
-#from scipy.stats import t
-from scipy import stats
 import seaborn as sns
 
 import matplotlib.dates as mdates
-import datetime as dt
 
 file_location = "Output/Strategy_Returns.xlsx" 
 

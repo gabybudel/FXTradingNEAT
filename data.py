@@ -1,27 +1,45 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Apr 13 13:51:09 2018
+"""Data preparation for the NEAT FX trading project.
 
-@author: gabys
+Loads spot, forward, implied-volatility, and NBER recession data from
+``Processed/FX_data.xlsx``, then computes (as module-level variables):
+
+* mid/bid/offer spot and 1-month forward rates, expressed as USD per unit of
+  foreign currency (raw quotes are foreign currency per USD and are inverted
+  on load; inversion swaps the roles of bid and offer);
+* monthly and daily log returns, and excess returns versus lagged forwards
+  (with and without bid/offer transaction costs);
+* 1-year rolling realized volatility, implied volatility, and the volatility
+  risk premium (``vrp = exp_vol_ph - imp_vol``);
+* benchmark long-short strategy returns (``bench_ret`` / ``exch_ret`` with
+  columns CAR, MOM, VRP), each going long/short the top/bottom ``pf_size``
+  fraction of currencies, signals lagged one month;
+* min-max-scaled NEAT input features (``*_sc``), scaled using only data
+  before ``split_date`` (the final 60 months are the test set).
+
+This script is intended to be run once in an interactive session
+(``%run data.py``); the evaluation scripts (``evaluate_ml.py``,
+``evaluate_secondrun.py``, ``plots.py``, ``strategies.py``) consume the
+variables it leaves in the namespace.
 """
 
-import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import scipy
-from scipy import stats 
-
-
-
-fpath = ''
+from scipy import stats
 
 
 def log_returns(prices):
-    return np.log(prices/prices.shift(1))      
-            
+    """Return one-period log returns of a price DataFrame/Series."""
+    return np.log(prices/prices.shift(1))
+
 
 def write_stats_table(df, path):
+    """Write a LaTeX (booktabs) table of summary statistics of ``df``.
+
+    Reports mean, standard deviation, skewness, kurtosis, and the 5%/50%/95%
+    quantiles per column. Statistics are computed on non-missing values.
+    """
     to_write = ["\\begin{table}[]", 
                 "\\centering", 
                 "\\caption{My Title}", 
@@ -41,13 +59,19 @@ def write_stats_table(df, path):
                 "\\end{tabular}",
                 "\\end{table}",
                 ]
-    file = open(path, "w")
-    for line in to_write:
-        file.write(line + '\n')
-    file.close()
+    with open(path, "w") as f_out:
+        for line in to_write:
+            f_out.write(line + '\n')
 
-    
+
 def write_returns_table(df, path):
+    """Write a LaTeX (booktabs) table of annualized return statistics.
+
+    ``df`` must contain monthly returns: means and quantiles are annualized
+    by a factor 12, standard deviations by sqrt(12), and the Sharpe ratio is
+    the ratio of the two (zero risk-free benchmark is implicit because the
+    inputs are excess returns).
+    """
     to_write = ["\\begin{table}[]", 
                 "\\centering", 
                 "\\caption{My Title}", 
@@ -68,12 +92,13 @@ def write_returns_table(df, path):
                 "\\end{tabular}",
                 "\\end{table}",
                 ]
-    file = open(path, "w")
-    for line in to_write:
-        file.write(line + '\n')
-    file.close()
+    with open(path, "w") as f_out:
+        for line in to_write:
+            f_out.write(line + '\n')
 
 
+# Mapping of Datastream spot-rate mnemonics to ISO currency codes.
+# Suffixes: (ER) = mid rate, (EB) = bid, (EO) = offer.
 crncy = {
 'UKDOLLR(ER)' : 'GBP',
 'SWISSF$(ER)' : 'CHF',
@@ -125,6 +150,7 @@ crncy = {
 'JAPAYE$(EO)' : 'JPY',
 }
 
+# Mapping of Datastream 1-month forward-rate mnemonics to ISO currency codes.
 fwdrt = {
 'EUDOL1F(ER)' : 'EUR',
 'USJPY1F(ER)' : 'JPY',
@@ -176,6 +202,7 @@ fwdrt = {
 'BBNZD1F(EO)' : 'NZD',
 }
 
+# Mapping of Bloomberg 1-year implied-volatility tickers to ISO currency codes.
 bb_vol = {
         'USDCADV1Y' : 'CAD',
         'USDCHFV1Y' : 'CHF',
@@ -196,74 +223,45 @@ bb_vol = {
 }
 
 trading_days = 252
+
+
+def load_sheet(xlfile, sheet, name_map=None):
+    """Parse ``sheet``, sort by date, and map raw tickers to ISO codes."""
+    df = xlfile.parse(sheet, index_col=0, parse_dates=True)
+    df = df.sort_index()
+    df.index = pd.to_datetime(df.index)
+    if name_map is not None:
+        df.columns = [name_map.get(c) for c in df.columns.values]
+    return df
+
+
 fx = pd.ExcelFile('Processed/FX_data.xlsx')
 
-# Exchange rates
-fx_er = fx.parse('SP_ER_monthly', index_col = 0, parse_dates = True)
-fx_er = fx_er.sort_index()
-fx_er.index = pd.to_datetime(fx_er.index)
-fx_er.columns = [crncy.get(c) for c in fx_er.columns.values]  # change variable names
-fx_er = 1/fx_er  # IMPORTANT!
-fx_eb = fx.parse('SP_EB_monthly', index_col = 0, parse_dates = True)
-fx_eb = fx_eb.sort_index()
-fx_eb.index = pd.to_datetime(fx_eb.index)
-fx_eb.columns = [crncy.get(c) for c in fx_eb.columns.values]  # change variable names
-temp = 1/fx_eb  # IMPORTANT!
-fx_eo = fx.parse('SP_EO_monthly', index_col = 0, parse_dates = True)
-fx_eo = fx_eo.sort_index()
-fx_eo.index = pd.to_datetime(fx_eo.index)
-fx_eo.columns = [crncy.get(c) for c in fx_eo.columns.values]  # change variable names
-fx_eb = 1/fx_eo  # IMPORTANT!
-fx_eo = temp
+# Spot exchange rates. Raw quotes are foreign currency per USD; invert to USD
+# per foreign currency. Inversion swaps bid and offer: the USD-per-FC bid
+# price is the reciprocal of the FC-per-USD offer price, and vice versa.
+fx_er = 1/load_sheet(fx, 'SP_ER_monthly', crncy)
+fx_eb = 1/load_sheet(fx, 'SP_EO_monthly', crncy)
+fx_eo = 1/load_sheet(fx, 'SP_EB_monthly', crncy)
 
-
-# Forward rates
-fwd_er = fx.parse('1F_ER_monthly', index_col = 0, parse_dates = True)
-fwd_er = fwd_er.sort_index() 
-fwd_er.index = pd.to_datetime(fwd_er.index)
-fwd_er.columns = [fwdrt.get(f) for f in fwd_er.columns.values]  # change variable names
-fwd_er = 1/fwd_er  # IMPORTANT!
-fwd_eb = fx.parse('1F_EB_monthly', index_col = 0, parse_dates = True)
-fwd_eb = fwd_eb.sort_index() 
-fwd_eb.index = pd.to_datetime(fwd_eb.index)
-fwd_eb.columns = [fwdrt.get(f) for f in fwd_eb.columns.values]  # change variable names
-temp = 1/fwd_eb  # IMPORTANT!
-fwd_eo = fx.parse('1F_EO_monthly', index_col = 0, parse_dates = True)
-fwd_eo = fwd_eo.sort_index() 
-fwd_eo.index = pd.to_datetime(fwd_eo.index)
-fwd_eo.columns = [fwdrt.get(f) for f in fwd_eo.columns.values]  # change variable names
-fwd_eb = 1/fwd_eo  # IMPORTANT!
-fwd_eo = temp
-yfwd_er = fx.parse('1F_ER_monthly', index_col = 0, parse_dates = True)
-yfwd_er = yfwd_er.sort_index() 
-yfwd_er.index = pd.to_datetime(yfwd_er.index)
-yfwd_er.columns = [fwdrt.get(f) for f in yfwd_er.columns.values]  # change variable names
-yfwd_er = 1/yfwd_er  # IMPORTANT!
+# 1-month forward rates, inverted (and bid/offer swapped) the same way
+fwd_er = 1/load_sheet(fx, '1F_ER_monthly', fwdrt)
+fwd_eb = 1/load_sheet(fx, '1F_EO_monthly', fwdrt)
+fwd_eo = 1/load_sheet(fx, '1F_EB_monthly', fwdrt)
+yfwd_er = fwd_er.copy()
 
 # Daily exchange rates
-fx_daily = fx.parse('SP_ER_daily', index_col = 0, parse_dates = True)
-fx_daily = fx_daily.sort_index()
-fx_daily.index = pd.to_datetime(fx_daily.index)
-fx_daily.columns = [crncy.get(c) for c in fx_daily.columns.values]  # change variable names
-fx_daily = 1/fx_daily  # IMPORTANT!
-fwd_daily = fx.parse('FW_ER_daily', index_col = 0, parse_dates = True)
-fwd_daily = fwd_daily.sort_index()
-fwd_daily.index = pd.to_datetime(fwd_daily.index)
-fwd_daily.columns = [crncy.get(c) for c in fwd_daily.columns.values]  # change variable names
-fwd_daily = 1/fwd_daily  # IMPORTANT!
+fx_daily = 1/load_sheet(fx, 'SP_ER_daily', crncy)
+fwd_daily = 1/load_sheet(fx, 'FW_ER_daily', crncy)
 
-# Implied volatilities Bloomberg
-imp_vol = fx.parse('ImpVol_Bloom', index_col = 0, parse_dates = True)
-imp_vol = imp_vol.sort_index() 
-imp_vol.index = pd.to_datetime(imp_vol.index)
-imp_vol.columns = [bb_vol.get(c) for c in imp_vol.columns.values]  # change variable names
+# Implied volatilities Bloomberg (already in volatility units, no inversion)
+imp_vol = load_sheet(fx, 'ImpVol_Bloom', bb_vol)
 
-# Recession Periods
-nber = fx.parse('Recession', index_col = 0, parse_dates = True)
-nber = nber.sort_index()
-nber.index = pd.to_datetime(nber.index)
+# NBER recession indicator (0/1, column 'RECESS')
+nber = load_sheet(fx, 'Recession')
 
 
+# Sample window with (near-)complete cross-sectional coverage
 first_date = fx_er.index[145]  # corresponds to 1997-01-23 (inclusive)
 last_date = fx_er.index[-1]  # corresponds to 2018-04-23 (not inclusive)
 
@@ -303,7 +301,9 @@ exp_vol_ph[exp_vol_ph == 0] = float('NaN')
 exp_vol_ph = exp_vol_ph[exp_vol_ph.index >= (np.min(imp_vol.index) - np.timedelta64(15, 'D'))]
 exp_vol_ph = exp_vol_ph[exp_vol_ph.index < np.max(imp_vol.index)]
 
-# Force different index
+# Align implied-vol observation dates to the realized-vol (month-end) index.
+# NOTE: this is a positional overwrite, not a merge — it assumes both series
+# cover the same months in the same order.
 imp_vol.index = exp_vol_ph.index
 
 # Volatility risk premium
@@ -351,7 +351,7 @@ for row in fx_er.index:
         lb = sorted_ret[n_vrp-1]
         ub = sorted_ret[-n_vrp]
         vrp_signals.loc[row,(vrp.loc[row,~np.isnan(fwd_er.loc[row,:])] >= ub) & \
-                        (~np.isnan(fwd_er.loc[row,:]))] = 1  # long in highest momentum, only when forward data is available
+                        (~np.isnan(fwd_er.loc[row,:]))] = 1  # long in highest VRP, only when forward data is available
         vrp_signals.loc[row,(vrp.loc[row,~np.isnan(fwd_er.loc[row,:])] <= lb) & \
                         (~np.isnan(fwd_er.loc[row,:]))] = -1
 
@@ -376,6 +376,11 @@ strat_cum = bench_ret.cumsum()
 
 
 def minmax_scale(df, split):
+    """Min-max scale ``df`` using only observations strictly before ``split``.
+
+    Using the training-period extrema for the full sample avoids look-ahead
+    bias in the test period (test values may fall outside [0, 1]).
+    """
     return (df - np.min(df[df.index < split]))/(np.max(df[df.index < split]) \
             - np.min(df[df.index < split]))
 

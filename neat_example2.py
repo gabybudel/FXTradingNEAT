@@ -1,5 +1,8 @@
-"""
-NEAT Python Currency Trading Strategy
+"""Legacy copy of the Sharpe-fitness NEAT trading strategy.
+
+Superseded by ``neat_trader_sharpe.py``; kept for provenance. Contains
+hardcoded Windows paths from the original thesis environment and will not run
+elsewhere without editing ``fpath`` and the ``sys.path`` entry below.
 """
 
 from __future__ import print_function
@@ -9,7 +12,7 @@ import os
 import neat
 import sys
 import pickle
-sys.path.append('C:\Python\External')
+sys.path.append(r'C:\Python\External')
 import visualize
 
 fpath = 'C:/Users/gabys/Documents/Erasmus/MScFI Thesis/Data'

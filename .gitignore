@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# NEAT run artifacts
+neat-checkpoint-*
+*.pckl
+
+# Generated outputs
+Output/
+Strategy_Returns.xlsx
+
+# Data (licensed, not distributed)
+Processed/
+Scaled/
+
+# IDE
+.idea/
+.spyproject/

@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Apr 30 16:16:17 2018
+"""Return and volatility computations (interactive snippet).
 
-@author: gabys
+Subset of the calculations in ``data.py``, kept as a working note. NOT a
+standalone script: it references ``fx_er``, ``fx_daily``, ``fwd_er``,
+``imp_vol``, and ``trading_days`` from a session in which ``data.py`` was
+run. Note the realized-volatility window here uses ``trading_days`` calendar
+days, whereas ``data.py`` uses a full calendar year.
 """
 
-import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 
 def log_returns(prices):
+    """Return one-period log returns of a price DataFrame/Series."""
     return np.log(prices/prices.shift(1))
 
 # Calculate returns

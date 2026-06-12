@@ -1,30 +1,37 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun May 13 18:23:03 2018
+"""Evaluate a second NEAT training run against the benchmark strategies.
 
-@author: gabys
+Variant of ``evaluate_ml.py`` (without the LaTeX table output) used for the
+second training run of the thesis. Applies the pickled winner network to the
+full sample and writes ``Strategy_Returns.xlsx``.
+
+NOT a standalone script: it references variables created by running
+``data.py`` in the same interactive session (the ``*_sc`` feature frames,
+``fx_er``, ``bench_ret``, ``exch_ret``, ``split_date``, ``nber``, ...).
+Run as::
+
+    %run data.py
+    %run evaluate_secondrun.py
 """
 
 import numpy as np
 import pandas as pd
-import os
 import neat
-import sys
 import pickle
-import scipy
-from scipy import stats
-import visualize
 
-
+# Fraction of the available cross-section held long (and short) each month;
+# must match the value used during training.
 pf_size = 0.2
 
-filehandler = open('winner_net.pckl', 'rb')
-best_net = pickle.load(filehandler)
+with open('winner_net.pckl', 'rb') as filehandler:
+    best_net = pickle.load(filehandler)
 config_path = 'config-feedforward'
 config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
                      config_path)
 
+# A (date, currency) cell is "complete" iff all 14 currency-level features
+# are non-missing: NaN propagates through the sum, and NaN != NaN.
 temp = lagged1_ret_sc + lagged2_ret_sc + lagged3_ret_sc + \
 lagged1_ret_ex_sc + lagged2_ret_ex_sc + lagged3_ret_ex_sc + curr_vol_sc + \
 lagged1_vol_sc + lagged2_vol_sc + lagged3_vol_sc + curr_imp_vol_sc + \
@@ -47,16 +54,19 @@ for d in ml_signals.index:
                   curr_imp_vol_sc.loc[d,c],curr_vrp_sc.loc[d,c],\
                   curr_fw_prem_sc.loc[d,c],curr_spread_sc.loc[d,c],nber_sc.loc[d,'RECESS'])
             output = best_net.activate(xi)
-            activations.loc[c,'Activation'] = output[0] 
-            sorted_act = np.sort(activations['Activation'])  # index 0 is smallest
-            n_invest = np.int64(np.round(len(activations.index)*pf_size))
-            lb = sorted_act[n_invest-1]
-            ub = sorted_act[-n_invest]
-            long = activations.index[activations['Activation'] >= ub]
-            short = activations.index[activations['Activation'] <= lb]
-            ml_signals.loc[d,[(c in long) for c in ml_signals.columns]] = 1
-            ml_signals.loc[d,[(c in short) for c in ml_signals.columns]] = -1
-    
+            activations.loc[c,'Activation'] = output[0]
+        # Portfolio construction happens once per date, after all currencies
+        # have been scored (this block was previously mis-indented inside the
+        # per-currency loop, sorting a partially filled activation frame).
+        sorted_act = np.sort(activations['Activation'])  # index 0 is smallest
+        n_invest = np.int64(np.round(len(activations.index)*pf_size))
+        lb = sorted_act[n_invest-1]
+        ub = sorted_act[-n_invest]
+        long = activations.index[activations['Activation'] >= ub]
+        short = activations.index[activations['Activation'] <= lb]
+        ml_signals.loc[d,[(c in long) for c in ml_signals.columns]] = 1
+        ml_signals.loc[d,[(c in short) for c in ml_signals.columns]] = -1
+
 # Calculate return
 ml_returns = [(np.mean(ret_ex_long.loc[d,ml_signals.shift(1).loc[d,:] == 1]) - \
  np.mean(ret_ex_short.loc[d,ml_signals.shift(1).loc[d,:] == -1])) for d in ml_signals.index]

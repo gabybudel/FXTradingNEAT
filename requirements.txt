@@ -1,0 +1,16 @@
+# Core scientific stack (the code predates pandas 1.0 idioms but runs on
+# moderately recent versions; xlrd/openpyxl are needed for Excel I/O).
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+statsmodels
+openpyxl
+xlrd
+
+# Neuroevolution
+neat-python
+
+# Network drawings (also requires the system graphviz binaries)
+graphviz

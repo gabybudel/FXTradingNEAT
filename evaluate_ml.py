@@ -1,32 +1,43 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun May 13 11:05:04 2018
+"""Evaluate a trained NEAT network against the benchmark strategies.
 
-@author: gabys
+Applies the pickled winner network to the full sample (train + test),
+constructs long-short signals with the same portfolio rules as training, and
+compares the resulting returns with the CAR/MOM/VRP benchmarks. Writes
+``Strategy_Returns.xlsx`` and LaTeX summary tables.
+
+NOT a standalone script: it references variables created by running
+``data.py`` in the same interactive session (the ``*_sc`` feature frames,
+``fx_er``, ``bench_ret``, ``exch_ret``, ``split_date``, ...). Run as::
+
+    %run data.py
+    %run evaluate_ml.py
+
+after adjusting ``fpath`` and the Excel input path marked ``FILEPATH`` below.
 """
 
 import numpy as np
 import pandas as pd
 import os
 import neat
-import sys
 import pickle
 import scipy
 from scipy import stats
-import visualize
 
+# Directory containing winner_net.pckl and the run outputs (thesis-era path;
+# adjust to your environment).
 fpath = 'C:/Users/gabys/Documents/Erasmus/MScFI Thesis/Data/Output/Second Run'
 os.chdir(fpath)
 
+# Fraction of the available cross-section held long (and short) each month;
+# must match the value used during training.
 pf_size = 0.2
 
-filehandler = open('winner_net.pckl', 'rb')
-best_net = pickle.load(filehandler)
-config_path = ''
-config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                     neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                     config_path)
+with open('winner_net.pckl', 'rb') as filehandler:
+    best_net = pickle.load(filehandler)
 
+# A (date, currency) cell is "complete" iff all 14 currency-level features
+# are non-missing: NaN propagates through the sum, and NaN != NaN.
 temp = lagged1_ret_sc + lagged2_ret_sc + lagged3_ret_sc + \
 lagged1_ret_ex_sc + lagged2_ret_ex_sc + lagged3_ret_ex_sc + curr_vol_sc + \
 lagged1_vol_sc + lagged2_vol_sc + lagged3_vol_sc + curr_imp_vol_sc + \
@@ -101,6 +112,8 @@ test_ret.to_excel(writer,'Test_Ret')
 nber.to_excel(writer,'NBER')
 writer.save()
 
+# Placeholder: point this at a previously written Strategy_Returns.xlsx to
+# reload results instead of recomputing them above.
 f = pd.ExcelFile('FILEPATH')
 strat_ret = f.parse('Strat_Ret', index_col = 0, parse_dates = True)
 test_ret = f.parse('Test_Ret', index_col = 0, parse_dates = True)
@@ -108,13 +121,20 @@ nber = f.parse('NBER', index_col = 0, parse_dates = True)
 split_date = strat_ret.index[-60]  # last 5 years of data
 
 def write_returns_table(df1, df2, path):
-    to_write = ["\\begin{table}[]", 
-                "\\centering", 
-                "\\caption{My Title}", 
-                "\\label{tab:mylabel}",  
-                "\\begin{tabular}{l" + ''.join("r" for d in df1.columns) + "r" + ''.join("r" for d in df2.columns) + "}", 
+    """Write a two-panel LaTeX table of annualized return statistics.
+
+    ``df1`` and ``df2`` are monthly return panels (e.g. excess vs. exchange
+    rate returns); means/quantiles are annualized by 12, standard deviations
+    by sqrt(12). $SR$ is the annualized Sharpe ratio and $AC$ the first-order
+    autocorrelation.
+    """
+    to_write = ["\\begin{table}[]",
+                "\\centering",
+                "\\caption{My Title}",
+                "\\label{tab:mylabel}",
+                "\\begin{tabular}{l" + ''.join("r" for d in df1.columns) + "r" + ''.join("r" for d in df2.columns) + "}",
                 "\\toprule",
-                ''.join((" & " + d) for d in df1.columns) + " & " + ''.join((" & " + d) for d in df1.columns) + " \\\\",
+                ''.join((" & " + d) for d in df1.columns) + " & " + ''.join((" & " + d) for d in df2.columns) + " \\\\",
                 "\\midrule",
                 "Mean" + ''.join((" & " + "%.2f" % (12*np.mean(df1.iloc[:,j]))) for j in range(0,df1.shape[1])) + " & " + ''.join((" & " + "%.2f" % (12*np.mean(df2.iloc[:,j]))) for j in range(0,df2.shape[1]))  + " \\\\",
                 "St.Dev." + ''.join((" & " + "%.2f" % (np.sqrt(12)*np.std(df1.iloc[:,j], ddof = 1))) for j in range(0,df1.shape[1])) + " & " + ''.join((" & " + "%.2f" % (np.sqrt(12)*np.std(df2.iloc[:,j], ddof = 1))) for j in range(0,df2.shape[1])) + " \\\\",
@@ -129,18 +149,19 @@ def write_returns_table(df1, df2, path):
                 "\\end{tabular}",
                 "\\end{table}",
                 ]
-    file = open(path, "w")
-    file.writelines(line + '\n' for line in to_write)
-    file.close()
-    
+    with open(path, "w") as f_out:
+        f_out.writelines(line + '\n' for line in to_write)
+
+
 def write_stats_table(df1, df2, path):
-    to_write = ["\\begin{table}[]", 
-                "\\centering", 
-                "\\caption{My Title}", 
-                "\\label{tab:mylabel}",  
-                "\\begin{tabular}{l" + ''.join("r" for d in df1.columns) + "r" + ''.join("r" for d in df2.columns) + "}", 
+    """Write a two-panel LaTeX table of (non-annualized) summary statistics."""
+    to_write = ["\\begin{table}[]",
+                "\\centering",
+                "\\caption{My Title}",
+                "\\label{tab:mylabel}",
+                "\\begin{tabular}{l" + ''.join("r" for d in df1.columns) + "r" + ''.join("r" for d in df2.columns) + "}",
                 "\\toprule",
-                ''.join((" & " + d) for d in df1.columns) + " & " + ''.join((" & " + d) for d in df1.columns) + " \\\\",
+                ''.join((" & " + d) for d in df1.columns) + " & " + ''.join((" & " + d) for d in df2.columns) + " \\\\",
                 "\\midrule",
                 "Mean" + ''.join((" & " + "%.2f" % (np.mean(df1.iloc[:,j]))) for j in range(0,df1.shape[1])) + " & " + ''.join((" & " + "%.2f" % (np.mean(df2.iloc[:,j]))) for j in range(0,df2.shape[1]))  + " \\\\",
                 "St.Dev." + ''.join((" & " + "%.2f" % (np.std(df1.iloc[:,j], ddof = 1))) for j in range(0,df1.shape[1])) + " & " + ''.join((" & " + "%.2f" % (np.std(df2.iloc[:,j], ddof = 1))) for j in range(0,df2.shape[1])) + " \\\\",
@@ -154,9 +175,9 @@ def write_stats_table(df1, df2, path):
                 "\\end{tabular}",
                 "\\end{table}",
                 ]
-    file = open(path, "w")
-    file.writelines(line + '\n' for line in to_write)
-    file.close()
+    with open(path, "w") as f_out:
+        f_out.writelines(line + '\n' for line in to_write)
+
 
 write_returns_table(100*strat_ret, 100*strat_ret_exchange, "ret_strategy_returns_table.txt")
 write_returns_table(100*test_ret, 100*test_ret_exchange, "ret_test_returns_table.txt")

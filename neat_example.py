@@ -1,5 +1,9 @@
-"""
-2-input XOR example -- this is most likely the simplest possible example.
+"""2-input XOR example from the neat-python documentation.
+
+Kept as a minimal sanity check that the neat-python installation works.
+Note it shares ``config-feedforward`` with the trading scripts, which expects
+15 inputs; for a faithful XOR run, use the 2-input config from the
+neat-python examples instead.
 """
 
 from __future__ import print_function
@@ -22,7 +26,7 @@ def eval_genomes(genomes, config):
 # Load configuration.
 config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                     'config-feadforward')
+                     'config-feedforward')
 
 # Create the population, which is the top-level object for a NEAT run.
 p = neat.Population(config)

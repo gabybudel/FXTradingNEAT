@@ -1,16 +1,6 @@
 # -*- coding: utf-8 -*-
+"""Empty scaffold left over from the original thesis project.
+
+Never implemented; kept only because it is referenced in the repository
+history. Safe to delete.
 """
-Created on Tue May  8 10:44:05 2018
-
-@author: gabys
-"""
-
-import os
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import scipy
-from scipy import stats 
-
-
-

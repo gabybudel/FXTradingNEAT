@@ -1,18 +1,26 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Jun 29 08:56:15 2018
+"""LaTeX table writer for two panels of monthly returns.
 
-@author: gabys
+Standalone copy of ``write_returns_table`` from ``evaluate_ml.py``: reports
+annualized mean, standard deviation, Sharpe ratio, and quantiles plus
+skewness, kurtosis, and first-order autocorrelation, side by side for two
+return panels.
 """
+
+import numpy as np
+import scipy
+from scipy import stats
+
 
 def write_returns_table(df1, df2, path):
-    to_write = ["\\begin{table}[]", 
-                "\\centering", 
-                "\\caption{My Title}", 
-                "\\label{tab:mylabel}",  
-                "\\begin{tabular}{l" + ''.join("r" for d in df1.columns) + "r" + ''.join("r" for d in df2.columns) + "}", 
+    """Write a two-panel LaTeX (booktabs) table of annualized return stats."""
+    to_write = ["\\begin{table}[]",
+                "\\centering",
+                "\\caption{My Title}",
+                "\\label{tab:mylabel}",
+                "\\begin{tabular}{l" + ''.join("r" for d in df1.columns) + "r" + ''.join("r" for d in df2.columns) + "}",
                 "\\toprule",
-                ''.join((" & " + d) for d in df1.columns) + " & " + ''.join((" & " + d) for d in df1.columns) + " \\\\",
+                ''.join((" & " + d) for d in df1.columns) + " & " + ''.join((" & " + d) for d in df2.columns) + " \\\\",
                 "\\midrule",
                 "Mean" + ''.join((" & " + "%.2f" % (12*np.mean(df1.iloc[:,j]))) for j in range(0,df1.shape[1])) + " & " + ''.join((" & " + "%.2f" % (12*np.mean(df2.iloc[:,j]))) for j in range(0,df2.shape[1]))  + " \\\\",
                 "St.Dev." + ''.join((" & " + "%.2f" % (np.sqrt(12)*np.std(df1.iloc[:,j], ddof = 1))) for j in range(0,df1.shape[1])) + " & " + ''.join((" & " + "%.2f" % (np.sqrt(12)*np.std(df2.iloc[:,j], ddof = 1))) for j in range(0,df2.shape[1])) + " \\\\",
@@ -27,6 +35,5 @@ def write_returns_table(df1, df2, path):
                 "\\end{tabular}",
                 "\\end{table}",
                 ]
-    file = open(path, "w")
-    file.writelines(line + '\n' for line in to_write)
-    file.close()
+    with open(path, "w") as f_out:
+        f_out.writelines(line + '\n' for line in to_write)
